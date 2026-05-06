@@ -2,45 +2,59 @@
 
 namespace Database\Seeders;
 
-use App\Models\Sale;
 use Illuminate\Database\Seeder;
+use App\Models\Sale;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class SaleSeeder extends Seeder
 {
     public function run(): void
     {
-        $csvPath = database_path('data/sales.csv');
+        // Clear existing data
+        Sale::truncate();
 
-        if (!file_exists($csvPath)) {
-            return;
-        }
+        $sqlFile = database_path('data/Dataset.sql');
+        $content = file_get_contents($sqlFile);
 
-        if (($handle = fopen($csvPath, 'r')) === false) {
-            return;
-        }
+        // Regex to match INSERT INTO `tableName` (`Hari`, `Tanggal`, `Kegiatan`, `Curah Hujan (mm)`, `Penjualan (pcs)`) VALUES ('2', '1', '0', '1.4', '0');
+        preg_match_all("/VALUES \('(\d+)', '(\d+)', '(\d+)', '([\d.]+)', '(\d+)'\);/", $content, $matches, PREG_SET_ORDER);
 
-        $header = fgetcsv($handle);
-        if (empty($header)) {
-            fclose($handle);
-            return;
-        }
+        $currentYear = 2024;
+        $currentMonth = 1;
+        $lastDay = 0;
 
-        while (($row = fgetcsv($handle)) !== false) {
-            $data = array_combine($header, $row);
-            if ($data === false) {
-                continue;
+        foreach ($matches as $match) {
+            $day = (int)$match[2];
+            $activity = (int)$match[3] === 1;
+            $rainfall = (float)$match[4];
+            $sales = (int)$match[5];
+
+            // Detect month transition
+            if ($day < $lastDay) {
+                $currentMonth++;
+                if ($currentMonth > 12) {
+                    $currentMonth = 1;
+                    $currentYear++;
+                }
             }
+            $lastDay = $day;
+
+            $date = Carbon::create($currentYear, $currentMonth, $day);
 
             Sale::create([
-                'date' => $data['date'],
-                'sales' => intval($data['sales']),
-                'activity' => in_array(strtolower($data['activity']), ['1', 'true', 'yes', 'y', 'ada'], true),
-                'activity_name' => $data['activity_name'] ?: null,
-                'rainfall_mm' => intval($data['rainfall_mm']),
-                'rain_level' => ucfirst(strtolower($data['rain_level'])),
+                'date' => $date->format('Y-m-d'),
+                'sales' => $sales,
+                'activity' => $activity,
+                'activity_name' => $activity ? 'Promo' : null,
+                'rainfall_mm' => $rainfall,
+                'rain_level' => $this->getRainLevel($rainfall),
             ]);
         }
+    }
 
-        fclose($handle);
+    private function getRainLevel($mm)
+    {
+        return $mm < 20 ? 'Low' : 'High';
     }
 }
